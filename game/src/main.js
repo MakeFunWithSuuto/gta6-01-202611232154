@@ -124,6 +124,7 @@ function runGame() {
     handleScreens();
     if (screen === 'play' || screen === 'title') {
       accumulator += dt;
+      let consumed = false;
       while (accumulator >= STEP) {
         const aim = groundAt(cam, input.mouse.x, input.mouse.y);
         world.viewYaw = cam.yaw;
@@ -131,6 +132,7 @@ function runGame() {
         stepWorld(world, screen === 'play' ? input : null, aim, STEP);
         if (screen === 'title') world.focus = { x: cam.x, y: cam.y };
         accumulator -= STEP;
+        if (!consumed && screen === 'play') { input.endFrame(); consumed = true; }
       }
       if (screen === 'play') updateCamera3d(cam, world, dt);
     } else accumulator = 0;

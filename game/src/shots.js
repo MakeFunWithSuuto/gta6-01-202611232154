@@ -78,6 +78,7 @@ function chase(seed) {
     world.player.aim = Math.atan2(limo.y - car.y, limo.x - car.x);
   });
   world.banner = null;
+  placeCamera3d(cam, car.x + 20, car.y, car.angle - 0.5, 330, 190, 40, 1.0);
   world.subtitle('brandt', 'Lose her! I pay you people to lose her!');
   return { world, cam, hud: true };
 }
@@ -162,7 +163,7 @@ function title(seed) {
   run(world, cam, 1.5, () => {
     world.player.x = tower.x - 300; world.player.y = tower.y + 400;
   });
-  placeCamera3d(cam, tower.x - 300, tower.y + 400, -0.6, 700, 420, 200, 1.0);
+  placeCamera3d(cam, tower.x + 200, tower.y + 900, -1.2, 900, 620, 300, 1.0);
   const overlay = (ctx, w, h) => drawTitle(ctx, w, h, ['Continue', 'New Game', 'Controls'], 0, 1.2, 'Saved: 3/6 missions · $6,120');
   return { world, cam, hud: false, overlay };
 }

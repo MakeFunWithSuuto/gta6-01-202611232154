@@ -7,6 +7,7 @@ import { WEAPONS } from './combat.js';
 import { CAST } from './story.js';
 import { TOKEN_COUNT } from './services.js';
 import { toScreen } from './camera3d.js';
+import { WANTED_COOLDOWN } from './config.js';
 
 export const FONT = '"Trebuchet MS", "Segoe UI", sans-serif';
 
@@ -55,6 +56,27 @@ function drawTopRight(ctx, world, w) {
     const filled = k < w2.stars && !flashing;
     star(ctx, right - 16 - (4 - k) * 38, 166, 15, filled, fade && filled ? '#c9a24a' : '#ffd23f');
   }
+}
+
+/** Under the stars while wanted: units on the player, the helicopter and whether they see you. */
+function drawPoliceResponse(ctx, world, w) {
+  const wanted = world.wanted;
+  if (wanted.stars === 0) return;
+  const units = world.cars.filter((c) => c.driver === 'cop' && !c.wrecked).length;
+  const foot = world.peds.filter((p) => p.kind === 'cop' && !p.dead && p.hostile).length;
+  const x = w - 248;
+  const y = 192;
+  ctx.fillStyle = 'rgba(10,14,22,0.7)';
+  ctx.beginPath(); ctx.roundRect(x, y, 220, 92, 8); ctx.fill();
+  const blink = Math.sin(world.time * 10) > 0;
+  ctx.fillStyle = blink ? '#ff3b3b' : '#3b7bff';
+  ctx.fillRect(x, y, 220, 4);
+  outlined(ctx, 'SBPD RESPONSE', x + 12, y + 24, '#bcd4ff', 14);
+  outlined(ctx, `Cruisers ${units}   Officers ${foot}`, x + 12, y + 46, '#ffffff', 15, 'left', 'normal');
+  outlined(ctx, `Air unit ${world.heli ? 'OVERHEAD' : '-'}`, x + 12, y + 66, world.heli ? '#ffb0b0' : '#9aa4b5', 15, 'left', 'normal');
+  const cooldown = WANTED_COOLDOWN[wanted.stars];
+  const evade = wanted.seen ? 'SPOTTED' : `Evading ${Math.max(0, Math.ceil(cooldown - wanted.lost))}s`;
+  outlined(ctx, evade, x + 12, y + 86, wanted.seen ? '#ff6b6b' : '#7dffa0', 15, 'left');
 }
 
 function drawObjective(ctx, world) {
@@ -197,6 +219,7 @@ export function drawHud(ctx, world, cam, w, h) {
   drawObjectiveArrow(ctx, world, cam, w, h);
   drawMinimap(ctx, world, 130, h - 130, 100, cam.yaw);
   drawTopRight(ctx, world, w);
+  drawPoliceResponse(ctx, world, w);
   drawObjective(ctx, world);
   drawBottom(ctx, world, w, h);
   drawBanner(ctx, world, w, h);
