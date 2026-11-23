@@ -1,141 +1,137 @@
-// Drawing only: the world's state and the current screen in, pixels out. The 1280x720 playfield
-// is scaled to fit the window and centred, the margin filled with the backdrop colour. Flat
-// rectangles and circles, canvas text for the HUD and the panels. Text that holds a number is
-// rebuilt only when the number changes, so a frame allocates nothing.
-import { FIELD, FONT, LIVES, PALETTE } from './config.js';
-import { KIND_COIN } from './world.js';
+// The frame: sizes the canvas to the window, draws the world layers in order (ground, sun
+// shadows, decals, markers, pickups, walkers, cars, effects, buildings, palms, the objective
+// beacon, the helicopter), grades the light by the time of day with headlights after dark, then
+// lays the HUD on top in screen space.
+import { drawBuildings, drawGround, drawPalms, drawShadows, sunVector } from './render-city.js';
+import { drawBeacon, drawCar, drawDecals, drawEffects, drawHelicopter, drawMarkers, drawPeds, drawPickups, drawPlayer } from './render-actors.js';
+import { drawHud } from './hud.js';
 
-export const SCREEN_TITLE = 'title';
-export const SCREEN_PLAY = 'play';
-export const SCREEN_PAUSED = 'paused';
-export const SCREEN_OVER = 'over';
+const GRADE = [
+  [0, [70, 82, 140], 0.0], [5, [80, 90, 150], 0.0], [6.5, [255, 190, 170], 0.6], [8, [255, 255, 255], 1],
+  [16, [255, 255, 255], 1], [17.5, [255, 214, 165], 0.95], [19, [255, 160, 120], 0.7], [20.3, [150, 120, 190], 0.35],
+  [21.5, [70, 82, 140], 0.0], [24, [70, 82, 140], 0.0],
+];
 
-/** The panel's width; its height grows with its lines: room for the title, the lines and the prompt. */
-const PANEL = { width: 600, top: 134, line: 34, bottom: 70 };
-const LIFE_SIZE = 20;
-const LIFE_GAP = 8;
-
-function cachedLabel(prefix) {
-  let value = -1;
-  let text = '';
-  return function label(next) {
-    if (next !== value) {
-      value = next;
-      text = prefix + next;
-    }
-    return text;
-  };
+/** Multiply colour and daylight (0 night .. 1 noon) for an hour of the day. */
+export function lightAt(clock) {
+  for (let i = 0; i < GRADE.length - 1; i += 1) {
+    const [h0, c0, d0] = GRADE[i];
+    const [h1, c1, d1] = GRADE[i + 1];
+    if (clock < h0 || clock > h1) continue;
+    const t = (clock - h0) / (h1 - h0 || 1);
+    return { rgb: c0.map((v, k) => Math.round(v + (c1[k] - v) * t)), day: d0 + (d1 - d0) * t };
+  }
+  return { rgb: [255, 255, 255], day: 1 };
 }
 
 export function createRenderer(canvas) {
-  const context = canvas.getContext('2d');
-  const view = { scale: 1, x: 0, y: 0 };
-  const scoreLabel = cachedLabel('Score ');
-  const levelLabel = cachedLabel('Level ');
-  const finalLabel = cachedLabel('Score ');
-  const bestLabel = cachedLabel('Best ');
+  const ctx = canvas.getContext('2d');
+  const shadowLayer = document.createElement('canvas');
+  const sg = shadowLayer.getContext('2d');
+  let dpr = 1;
 
-  function resize() {
-    const ratio = window.devicePixelRatio || 1;
-    const width = Math.round(window.innerWidth * ratio);
-    const height = Math.round(window.innerHeight * ratio);
-    canvas.width = width;
-    canvas.height = height;
-    view.scale = Math.min(width / FIELD.width, height / FIELD.height);
-    view.x = (width - FIELD.width * view.scale) / 2;
-    view.y = (height - FIELD.height * view.scale) / 2;
+  function resize(cam) {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      shadowLayer.width = canvas.width;
+      shadowLayer.height = canvas.height;
+    }
+    cam.width = w;
+    cam.height = h;
   }
 
-  const fonts = new Map();
-  function text(value, x, y, size, color, align) {
-    if (!fonts.has(size)) fonts.set(size, `${size}px ${FONT}`);
-    context.font = fonts.get(size);
-    context.fillStyle = color;
-    context.textAlign = align;
-    context.fillText(value, x, y);
+  function worldTransform(g, cam) {
+    const z = cam.zoom * dpr;
+    g.setTransform(z, 0, 0, z, dpr * (cam.width / 2 + cam.shakeX) - cam.x * z, dpr * (cam.height / 2 + cam.shakeY) - cam.y * z);
   }
 
-  function drawField(state) {
-    context.fillStyle = PALETTE.sky;
-    context.fillRect(0, 0, FIELD.width, FIELD.height);
-    context.fillStyle = PALETTE.ground;
-    context.fillRect(0, FIELD.groundY, FIELD.width, FIELD.height - FIELD.groundY);
+  function drawNightLights(world, view, night) {
+    ctx.globalCompositeOperation = 'lighter';
+    for (const car of world.cars) {
+      if (car.wrecked || car.x < view.x0 - 200 || car.x > view.x1 + 200 || car.y < view.y0 - 200 || car.y > view.y1 + 200) continue;
+      const fx = Math.cos(car.angle);
+      const fy = Math.sin(car.angle);
+      const hx = car.x + fx * car.spec.len * 0.5;
+      const hy = car.y + fy * car.spec.len * 0.5;
+      const g = ctx.createRadialGradient(hx + fx * 60, hy + fy * 60, 5, hx + fx * 60, hy + fy * 60, 110);
+      g.addColorStop(0, `rgba(255,240,190,${0.35 * night})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(hx + fx * 60, hy + fy * 60, 110, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
 
-    const items = state.items;
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      if (item.kind === KIND_COIN) {
-        context.fillStyle = PALETTE.coin;
-        context.beginPath();
-        context.arc(item.x + item.width / 2, item.y + item.height / 2, item.width / 2, 0, Math.PI * 2);
-        context.fill();
-      } else {
-        context.fillStyle = PALETTE.block;
-        context.fillRect(item.x, item.y, item.width, item.height);
+  /** Draw a whole frame. `overlay(ctx, w, h)` paints menus after the HUD; `hud` false hides the HUD. */
+  function draw(world, cam, { hud = true, overlay = null } = {}) {
+    resize(cam);
+    const w = cam.width;
+    const h = cam.height;
+    const view = {
+      x0: cam.x - w / 2 / cam.zoom - 40, x1: cam.x + w / 2 / cam.zoom + 40,
+      y0: cam.y - h / 2 / cam.zoom - 40, y1: cam.y + h / 2 / cam.zoom + 40,
+    };
+    const light = lightAt(world.clock);
+    const sun = sunVector(world.clock);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#2f8fb0';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    worldTransform(ctx, cam);
+    drawGround(ctx, world, view);
+
+    sg.setTransform(1, 0, 0, 1, 0, 0);
+    sg.clearRect(0, 0, shadowLayer.width, shadowLayer.height);
+    worldTransform(sg, cam);
+    drawShadows(sg, world, view, sun);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 0.18 + 0.14 * light.day;
+    ctx.drawImage(shadowLayer, 0, 0);
+    ctx.globalAlpha = 1;
+    worldTransform(ctx, cam);
+
+    drawDecals(ctx, world);
+    drawMarkers(ctx, world, cam);
+    drawPickups(ctx, world);
+    drawPeds(ctx, world, false);
+    for (const car of world.cars) {
+      if (car.x < view.x0 - 80 || car.x > view.x1 + 80 || car.y < view.y0 - 80 || car.y > view.y1 + 80) continue;
+      drawCar(ctx, car, world.time);
+    }
+    drawPeds(ctx, world, true);
+    drawPlayer(ctx, world);
+    drawEffects(ctx, world);
+    drawBuildings(ctx, world, cam, view, sun);
+    drawPalms(ctx, world, cam, view);
+    drawBeacon(ctx, world, cam);
+    drawHelicopter(ctx, world, cam);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (light.day < 0.999) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgb(${light.rgb.join(',')})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+      if (light.day < 0.6) {
+        worldTransform(ctx, cam);
+        drawNightLights(world, view, 1 - light.day / 0.6);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
     }
+    const vignette = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, canvas.height * 0.45, canvas.width / 2, canvas.height / 2, canvas.height * 0.95);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const player = state.player;
-    // Blink while invulnerable after a hit: hidden on every other tenth of a second.
-    if (player.invulnerable === 0 || Math.floor(player.invulnerable * 10) % 2 === 1) {
-      context.fillStyle = PALETTE.player;
-      context.fillRect(player.x, player.y, player.width, player.height);
-    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (hud) drawHud(ctx, world, cam, w, h);
+    if (overlay) overlay(ctx, w, h);
   }
 
-  function drawHud(state) {
-    context.textBaseline = 'top';
-    text(scoreLabel(state.score), 24, 20, 28, PALETTE.text, 'left');
-    text(levelLabel(state.level), FIELD.width / 2, 20, 28, PALETTE.text, 'center');
-    const firstLife = FIELD.width - 24 - LIVES * (LIFE_SIZE + LIFE_GAP) + LIFE_GAP;
-    text('Lives', firstLife - 12, 20, 28, PALETTE.text, 'right');
-    for (let life = 0; life < LIVES; life += 1) {
-      context.fillStyle = life < state.lives ? PALETTE.player : PALETTE.ground;
-      context.fillRect(firstLife + life * (LIFE_SIZE + LIFE_GAP), 24, LIFE_SIZE, LIFE_SIZE);
-    }
-  }
-
-  function drawPanel(title, lines, prompt) {
-    const height = PANEL.top + lines.length * PANEL.line + PANEL.bottom;
-    const x = (FIELD.width - PANEL.width) / 2;
-    const y = (FIELD.height - height) / 2;
-    context.fillStyle = PALETTE.panel;
-    context.fillRect(x, y, PANEL.width, height);
-    context.textBaseline = 'alphabetic';
-    text(title, FIELD.width / 2, y + 78, 48, PALETTE.text, 'center');
-    for (let index = 0; index < lines.length; index += 1) {
-      text(lines[index], FIELD.width / 2, y + PANEL.top + index * PANEL.line, 22, PALETTE.muted, 'center');
-    }
-    text(prompt, FIELD.width / 2, y + height - 40, 24, PALETTE.coin, 'center');
-  }
-
-  const TITLE_LINES = ['Dodge the red blocks. Catch the gold coins.', 'Move with ← → or A D.  Pause with P.', ''];
-  const PAUSED_LINES = ['The blocks will wait for you.'];
-  const OVER_LINES = ['', ''];
-
-  /** Paint one frame: the field, then the HUD or a panel for the screen the game is on. */
-  function draw(state, screen, best) {
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.fillStyle = PALETTE.backdrop;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.setTransform(view.scale, 0, 0, view.scale, view.x, view.y);
-    drawField(state);
-    if (screen === SCREEN_TITLE) {
-      TITLE_LINES[2] = bestLabel(best);
-      drawPanel('Block Dodger', TITLE_LINES, 'Press Space or click to start');
-      return;
-    }
-    drawHud(state);
-    if (screen === SCREEN_PAUSED) drawPanel('Paused', PAUSED_LINES, 'Press P to resume');
-    else if (screen === SCREEN_OVER) {
-      OVER_LINES[0] = finalLabel(state.score);
-      OVER_LINES[1] = bestLabel(best);
-      drawPanel('Game over', OVER_LINES, 'Press Space or click to play again');
-    }
-  }
-
-  resize();
-  window.addEventListener('resize', resize);
   return { draw };
 }
