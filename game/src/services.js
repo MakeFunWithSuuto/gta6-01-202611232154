@@ -6,6 +6,7 @@ import { dist2 } from './physics.js';
 import { clearWanted } from './police.js';
 import { createRandom } from './random.js';
 import { addFloatText } from './effects.js';
+import { earnRep } from './progression.js';
 
 export const TOKEN_COUNT = 20;
 
@@ -100,6 +101,7 @@ export function updateServices(world, input, dt) {
       p.money += 250;
       world.banner = { title: `Sun Token ${world.tokens.size}/${TOKEN_COUNT}`, sub: '+$250', t: 2.5 };
       world.events.push({ type: 'token' });
+      earnRep(world, 25);
     } else if (item.type === 'health' && p.health < 100) {
       p.health = 100; item.respawn = 60;
       world.events.push({ type: 'cash' });

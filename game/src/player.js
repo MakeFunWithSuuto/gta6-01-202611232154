@@ -6,6 +6,7 @@ import { fireWeapon, punch, WEAPON_ORDER, WEAPONS } from './combat.js';
 import { createPed } from './peds.js';
 import { reportCrime } from './police.js';
 import { addFloatText } from './effects.js';
+import { earnRep } from './progression.js';
 
 export function createPlayer(x, y) {
   return {
@@ -48,6 +49,7 @@ function enterCar(world, p) {
     reportCrime(world, car.spec.police ? 3 : 1, car.x, car.y);
     world.events.push({ type: 'jack', x: car.x, y: car.y });
     world.stats.carsStolen += 1;
+    earnRep(world, 4);
   } else if (car.spec.police) reportCrime(world, 2, car.x, car.y);
   car.driver = 'player';
   car.ai = null;

@@ -29,7 +29,7 @@ export function createWorld(seed) {
     wanted: { stars: 0, heat: 0, lost: 0, flash: 0, busted: 0, seen: false },
     heli: null, story: createStory(),
     unlocked: { pistol: true }, tokens: new Set(),
-    stats: { kills: 0, carsStolen: 0, missions: 0, deaths: 0, arrests: 0 },
+    stats: { kills: 0, carsStolen: 0, missions: 0, deaths: 0, arrests: 0, rep: 0 },
     banner: null, prompt: null, shake: 0, respawn: 0, outcome: null,
     populateVisible: true, requestSave: false, district: '',
   };

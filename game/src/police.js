@@ -73,6 +73,7 @@ function spawnCruiser(world) {
     if (car.ai.i < 0 || car.ai.j < 0 || car.ai.i > 8 || car.ai.j > 7) continue;
     car.driver = 'cop';
     car.siren = true;
+    car.unit = world.rng.int(11, 48);
     world.cars.push(car);
     return;
   }

@@ -3,7 +3,8 @@
 // service prompts, the off-screen objective arrow, and the WASTED / BUSTED overlay.
 import { drawMinimap } from './minimap.js';
 import { objectivePoint, objectiveText } from './missions.js';
-import { WEAPONS } from './combat.js';
+import { WEAPON_ORDER, WEAPONS } from './combat.js';
+import { REP_LEVELS, repLevel, repProgress } from './progression.js';
 import { CAST } from './story.js';
 import { TOKEN_COUNT } from './services.js';
 import { toScreen } from './camera3d.js';
@@ -37,46 +38,85 @@ function star(ctx, x, y, r, filled, color) {
   ctx.stroke();
 }
 
+const SLOT_LABEL = { fists: 'FIST', pistol: 'PSTL', smg: 'SMG', shotgun: 'SHTG' };
+
 function drawTopRight(ctx, world, w) {
   const p = world.player;
   const right = w - 28;
   const h = Math.floor(world.clock);
   const m = Math.floor((world.clock % 1) * 60);
-  outlined(ctx, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, right, 40, '#ffffff', 24, 'right');
-  outlined(ctx, `$${Math.floor(p.money).toLocaleString('en-US')}`, right, 80, '#7dffa0', 36, 'right');
-  const weapon = WEAPONS[p.weapon];
-  const ammo = p.weapon === 'fists' ? '' : `  ${p.ammo[p.weapon]}`;
-  ctx.fillStyle = 'rgba(10,14,22,0.6)';
-  ctx.beginPath(); ctx.roundRect(right - 190, 96, 190, 40, 8); ctx.fill();
-  outlined(ctx, `${weapon.name}${ammo}`, right - 12, 123, '#ffe6a8', 20, 'right');
-  const w2 = world.wanted;
-  const flashing = w2.flash > 0 && Math.sin(world.time * 16) > 0;
-  const fade = w2.stars > 0 && !w2.seen && Math.sin(world.time * 6) > 0;
+  outlined(ctx, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, right, 36, '#ffffff', 22, 'right');
+  outlined(ctx, `$${Math.floor(p.money).toLocaleString('en-US')}`, right, 74, '#7dffa0', 34, 'right');
+  const rep = world.stats.rep ?? 0;
+  const level = repLevel(rep);
+  outlined(ctx, `REP ${level} · ${REP_LEVELS[level].title.toUpperCase()}`, right - 96, 98, '#ff9ad5', 13, 'right');
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(right - 88, 89, 88, 7);
+  ctx.fillStyle = '#ff5ab4'; ctx.fillRect(right - 88, 89, 88 * repProgress(rep), 7);
+
+  const slotW = 50;
+  WEAPON_ORDER.forEach((key, i) => {
+    const x = right - (WEAPON_ORDER.length - i) * (slotW + 6) + 6;
+    const owned = key === 'fists' || p.ammo[key] > 0;
+    const active = p.weapon === key;
+    ctx.fillStyle = active ? 'rgba(232,120,30,0.95)' : owned ? 'rgba(10,14,22,0.7)' : 'rgba(10,14,22,0.35)';
+    ctx.beginPath(); ctx.roundRect(x, 108, slotW, 44, 7); ctx.fill();
+    outlined(ctx, SLOT_LABEL[key], x + slotW / 2, 128, active ? '#ffffff' : owned ? '#ffe6a8' : '#666c78', 13, 'center');
+    if (key !== 'fists') outlined(ctx, owned ? String(p.ammo[key]) : '-', x + slotW / 2, 146, active ? '#ffffff' : '#c9d2e0', 12, 'center', 'normal');
+  });
+  outlined(ctx, WEAPONS[p.weapon].name, right, 170, '#ffe6a8', 14, 'right', 'normal');
+
+  const wanted = world.wanted;
+  const flashing = wanted.flash > 0 && Math.sin(world.time * 16) > 0;
+  const fade = wanted.stars > 0 && !wanted.seen && Math.sin(world.time * 6) > 0;
   for (let k = 0; k < 5; k += 1) {
-    const filled = k < w2.stars && !flashing;
-    star(ctx, right - 16 - (4 - k) * 38, 166, 15, filled, fade && filled ? '#c9a24a' : '#ffd23f');
+    const filled = k < wanted.stars && !flashing;
+    star(ctx, right - 16 - (4 - k) * 36, 196, 14, filled, fade && filled ? '#c9a24a' : '#ffd23f');
   }
 }
 
-/** Under the stars while wanted: units on the player, the helicopter and whether they see you. */
+/** Under the stars while wanted: the nearest units hunting the player, air support and sight. */
 function drawPoliceResponse(ctx, world, w) {
   const wanted = world.wanted;
   if (wanted.stars === 0) return;
-  const units = world.cars.filter((c) => c.driver === 'cop' && !c.wrecked).length;
-  const foot = world.peds.filter((p) => p.kind === 'cop' && !p.dead && p.hostile).length;
-  const x = w - 248;
-  const y = 192;
-  ctx.fillStyle = 'rgba(10,14,22,0.7)';
-  ctx.beginPath(); ctx.roundRect(x, y, 220, 92, 8); ctx.fill();
+  const f = world.focus;
+  const units = world.cars
+    .filter((c) => c.driver === 'cop' && !c.wrecked)
+    .map((c) => ({ label: `Unit ${c.unit ?? 7}`, kind: 'Cruiser', d: Math.hypot(c.x - f.x, c.y - f.y) }));
+  for (const ped of world.peds) if (ped.kind === 'cop' && !ped.dead && ped.hostile) units.push({ label: `Officer ${ped.id % 90 + 10}`, kind: 'On foot', d: Math.hypot(ped.x - f.x, ped.y - f.y) });
+  if (world.heli) units.push({ label: 'Air-1', kind: 'Helicopter', d: Math.hypot(world.heli.x - f.x, world.heli.y - f.y) });
+  units.sort((a, b) => a.d - b.d);
+  const shown = units.slice(0, 4);
+  const x = w - 268;
+  const y = 220;
+  const height = 58 + shown.length * 20;
+  ctx.fillStyle = 'rgba(10,14,22,0.72)';
+  ctx.beginPath(); ctx.roundRect(x, y, 240, height, 8); ctx.fill();
   const blink = Math.sin(world.time * 10) > 0;
   ctx.fillStyle = blink ? '#ff3b3b' : '#3b7bff';
-  ctx.fillRect(x, y, 220, 4);
-  outlined(ctx, 'SBPD RESPONSE', x + 12, y + 24, '#bcd4ff', 14);
-  outlined(ctx, `Cruisers ${units}   Officers ${foot}`, x + 12, y + 46, '#ffffff', 15, 'left', 'normal');
-  outlined(ctx, `Air unit ${world.heli ? 'OVERHEAD' : '-'}`, x + 12, y + 66, world.heli ? '#ffb0b0' : '#9aa4b5', 15, 'left', 'normal');
-  const cooldown = WANTED_COOLDOWN[wanted.stars];
-  const evade = wanted.seen ? 'SPOTTED' : `Evading ${Math.max(0, Math.ceil(cooldown - wanted.lost))}s`;
-  outlined(ctx, evade, x + 12, y + 86, wanted.seen ? '#ff6b6b' : '#7dffa0', 15, 'left');
+  ctx.fillRect(x, y, 240, 4);
+  outlined(ctx, `SBPD RESPONSE · ${units.length} UNITS`, x + 12, y + 23, '#bcd4ff', 13);
+  shown.forEach((u, i) => {
+    const yy = y + 44 + i * 20;
+    outlined(ctx, u.label, x + 12, yy, '#ffffff', 13, 'left', 'normal');
+    outlined(ctx, u.kind, x + 110, yy, '#9fb3d8', 13, 'left', 'normal');
+    outlined(ctx, `${Math.round(u.d / 8)} m`, x + 228, yy, u.d < 400 ? '#ff8a8a' : '#c9d2e0', 13, 'right', 'normal');
+  });
+  const evade = wanted.seen ? 'SPOTTED - break line of sight' : `EVADING · stars drop in ${Math.max(0, Math.ceil(WANTED_COOLDOWN[wanted.stars] - wanted.lost))}s`;
+  outlined(ctx, evade, x + 12, y + height - 8, wanted.seen ? '#ff6b6b' : '#7dffa0', 13);
+}
+
+/** Health and armor bars beside the radar, with numbers. */
+function drawVitals(ctx, world, h) {
+  const p = world.player;
+  const x = 250;
+  const bar = (y, label, value, max, color) => {
+    outlined(ctx, label, x, y - 4, '#ffffff', 12);
+    outlined(ctx, String(Math.max(0, Math.round(value))), x + 170, y - 4, color, 12, 'right');
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 170, 9);
+    ctx.fillStyle = color; ctx.fillRect(x, y, 170 * Math.max(0, Math.min(1, value / max)), 9);
+  };
+  bar(h - 58, 'HEALTH', p.health, 100, p.health > 30 ? '#5ee07a' : '#ff4d4d');
+  bar(h - 26, 'ARMOR', p.armor, 100, '#4da3ff');
 }
 
 function drawObjective(ctx, world) {
@@ -157,8 +197,10 @@ function drawBottom(ctx, world, w, h) {
     outlined(ctx, `${kmh}`, w - 28, h - 92, '#ffffff', 44, 'right');
     outlined(ctx, `km/h · ${p.car.spec.name}`, w - 28, h - 64, '#bfe9ff', 15, 'right');
     const dmg = Math.max(0, p.car.health) / (p.car.spec.armored ? 260 : 100);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(w - 168, h - 140, 140, 7);
-    ctx.fillStyle = dmg > 0.35 ? '#9fe8ff' : '#ff8a5d'; ctx.fillRect(w - 168, h - 140, 140 * dmg, 7);
+    const state = p.car.burning > 0 ? 'ON FIRE' : dmg < 0.35 ? 'Engine smoking' : dmg < 0.7 ? 'Dented' : 'Clean';
+    outlined(ctx, `Body ${Math.round(dmg * 100)}% · ${state}`, w - 28, h - 140, dmg > 0.35 ? '#9fe8ff' : '#ff8a5d', 14, 'right');
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(w - 168, h - 134, 140, 6);
+    ctx.fillStyle = dmg > 0.35 ? '#9fe8ff' : '#ff8a5d'; ctx.fillRect(w - 168, h - 134, 140 * dmg, 6);
   }
   if (world.prompt) {
     ctx.font = `bold 18px ${FONT}`;
@@ -220,6 +262,7 @@ export function drawHud(ctx, world, cam, w, h) {
   drawMinimap(ctx, world, 130, h - 130, 100, cam.yaw);
   drawTopRight(ctx, world, w);
   drawPoliceResponse(ctx, world, w);
+  drawVitals(ctx, world, h);
   drawObjective(ctx, world);
   drawBottom(ctx, world, w, h);
   drawBanner(ctx, world, w, h);

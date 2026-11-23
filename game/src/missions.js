@@ -5,6 +5,7 @@
 import { dist2, distance } from './physics.js';
 import { MISSIONS } from './story.js';
 import { addFloatText } from './effects.js';
+import { earnRep } from './progression.js';
 
 export function createStory() {
   return { next: 0, active: null, courier: null, courierDone: 0 };
@@ -87,6 +88,7 @@ function completeMission(world) {
   world.story.active = null;
   world.story.next += 1;
   cleanupMission(world);
+  earnRep(world, Math.round(m.reward / 8));
   world.requestSave = true;
 }
 
@@ -145,6 +147,7 @@ function updateCourier(world, dt) {
   const pay = 180 + Math.round(c.timer * 4);
   p.money += pay;
   world.story.courierDone += 1;
+  earnRep(world, 35);
   world.story.courier = null;
   world.banner = { title: 'Delivered', sub: `+$${pay}  ·  ${Math.ceil(c.timer)}s to spare`, t: 3 };
   world.events.push({ type: 'pass' });

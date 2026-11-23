@@ -30,7 +30,7 @@ function playerCar(world, model, i, j, dir, along, color) {
 
 function cruiser(world, x, y, angle) {
   const car = createCar('bastion', x, y, angle);
-  car.driver = 'cop'; car.siren = true;
+  car.driver = 'cop'; car.siren = true; car.unit = 12 + world.cars.length % 30;
   car.vx = Math.cos(angle) * 260; car.vy = Math.sin(angle) * 260;
   world.cars.push(car);
   return car;
@@ -57,10 +57,15 @@ function chase(seed) {
   world.clock = 17.4;
   world.story.next = 5;
   world.player.money = 18450;
+  world.stats.rep = 1720;
+  world.player.armor = 45;
+  world.player.health = 81;
+  world.player.ammo.shotgun = 22;
   world.player.ammo.smg = 140;
   world.player.weapon = 'smg';
   world.tokens = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   const car = playerCar(world, 'mako', 2, 3, 0, 120, '#e0303a');
+  car.health = 64;
   startMission(world, 5);
   world.subtitles = [];
   const limo = world.cars.find((c) => c.tag === 'brandt');
@@ -88,6 +93,7 @@ function shootout(seed) {
   world.clock = 15.2;
   world.story.next = 2;
   world.player.money = 2640;
+  world.stats.rep = 310;
   world.player.ammo.smg = 96;
   world.unlocked.smg = true;
   world.player.weapon = 'smg';
@@ -123,7 +129,7 @@ function shootout(seed) {
   world.banner = null;
   world.subtitle('dex', 'Pike is the one in the yellow shirt. Do not let him reach the boat.');
   const pike = world.peds.find((ped) => ped.tag === 'pike');
-  for (const ped of world.peds) if (ped.kind === 'cop') ped.dead = true;
+  cruiser(world, p.x + 260, p.y - 40, Math.PI + 0.3).unit = 31;
   pike.x = p.x - 60; pike.y = p.y + 170;
   placeCamera3d(cam, p.x - 20, p.y, Math.PI / 2 - 0.35, 230, 230, 100);
   return { world, cam, hud: true };
@@ -134,6 +140,8 @@ function cruise(seed) {
   world.clock = 18.6;
   world.story.next = 3;
   world.player.money = 6120;
+  world.stats.rep = 590;
+  world.player.ammo.smg = 60;
   world.tokens = new Set([0, 1, 2, 3, 4, 5]);
   const car = playerCar(world, 'mako', 4, 7, 0, 160, '#ff6a1f');
   const places = world.city.places;

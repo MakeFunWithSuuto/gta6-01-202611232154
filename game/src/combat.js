@@ -5,6 +5,7 @@ import { damageCar } from './vehicles.js';
 import { panic } from './peds.js';
 import { addBlood, addExplosion, addSparks, addTracer } from './effects.js';
 import { reportCrime } from './police.js';
+import { earnRep } from './progression.js';
 
 export const WEAPONS = {
   fists: { name: 'Fists', damage: 16, rate: 0.38, range: 36, melee: true },
@@ -91,6 +92,7 @@ export function damagePed(world, ped, amount, fromPlayer, dx, dy) {
   world.events.push({ type: 'death', x: ped.x, y: ped.y, ped });
   if (!fromPlayer) return;
   world.stats.kills += 1;
+  if (ped.kind === 'gang') earnRep(world, 10);
   if (ped.kind === 'cop') reportCrime(world, 3, ped.x, ped.y);
   else if (ped.kind === 'civ') reportCrime(world, 1, ped.x, ped.y);
   if (ped.kind !== 'civ' || world.rng.chance(0.35)) {
