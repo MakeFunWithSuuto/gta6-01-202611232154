@@ -7,8 +7,8 @@
 import { STEP } from './config.js';
 import { createWorld, stepWorld } from './world.js';
 import { createInput } from './input.js';
-import { createRenderer } from './render.js';
-import { createCamera, screenToWorld, snapCamera, updateCamera } from './camera.js';
+import { createRenderer3d } from './render3d.js';
+import { createCamera3d, groundAt, placeCamera3d, snapCamera3d, updateCamera3d } from './camera3d.js';
 import { createAudio } from './audio.js';
 import { applySave, hasSave, readSave, writeSave } from './save.js';
 import { drawCityMap, drawControls, drawPause, drawTitle } from './menus.js';
@@ -20,7 +20,7 @@ const MAX_FRAME = 0.25;
 const params = new URLSearchParams(window.location.search);
 const canvas = document.getElementById('game');
 const status = document.getElementById('status');
-const renderer = createRenderer(canvas);
+const renderer = createRenderer3d(canvas, document.getElementById('hud'));
 
 function hitRect(rects, x, y) {
   return rects.findIndex((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
@@ -41,7 +41,7 @@ function runShot(name, seed) {
 function runGame() {
   const input = createInput(canvas);
   const audio = createAudio();
-  const cam = createCamera();
+  const cam = createCamera3d();
   let world = createWorld(Math.floor(Math.random() * 1e9));
   world.clock = 18.2;
   let screen = 'title';
@@ -60,7 +60,8 @@ function runGame() {
     world = createWorld(Math.floor(Math.random() * 1e9));
     if (load) { const data = readSave(); if (data) applySave(world, data); }
     world.focus = world.player;
-    snapCamera(cam, world);
+    cam.yaw = -Math.PI / 2;
+    snapCamera3d(cam, world);
     screen = 'play';
     if (!load) {
       world.subtitle('rae', 'Solmar Bay. Six years, and it still smells like sunscreen and gasoline.');
@@ -110,10 +111,10 @@ function runGame() {
   function titleCamera(dt) {
     titleTime += dt;
     const route = world.city.places;
-    cam.x = route.tower.x + Math.sin(titleTime * 0.05) * 1400;
-    cam.y = route.tower.y + 300 + Math.cos(titleTime * 0.04) * 900;
-    cam.zoom = 0.72;
-    world.focus = { x: cam.x, y: cam.y };
+    const x = route.tower.x + Math.sin(titleTime * 0.05) * 900;
+    const y = route.tower.y + 300 + Math.cos(titleTime * 0.04) * 600;
+    placeCamera3d(cam, x, y, titleTime * 0.07, 700, 420, 200, 1.0);
+    world.focus = { x, y };
   }
 
   function frame(now) {
@@ -124,13 +125,14 @@ function runGame() {
     if (screen === 'play' || screen === 'title') {
       accumulator += dt;
       while (accumulator >= STEP) {
-        const aim = screenToWorld(cam, input.mouse.x, input.mouse.y);
+        const aim = groundAt(cam, input.mouse.x, input.mouse.y);
+        world.viewYaw = cam.yaw;
         if (screen === 'title') { titleCamera(STEP); world.player.x = cam.x; world.player.y = cam.y; }
         stepWorld(world, screen === 'play' ? input : null, aim, STEP);
         if (screen === 'title') world.focus = { x: cam.x, y: cam.y };
         accumulator -= STEP;
       }
-      if (screen === 'play') updateCamera(cam, world, dt, screenToWorld(cam, input.mouse.x, input.mouse.y));
+      if (screen === 'play') updateCamera3d(cam, world, dt);
     } else accumulator = 0;
     if (world.requestSave) { world.requestSave = false; writeSave(world); }
     audio.update(world, dt);
@@ -150,6 +152,7 @@ function runGame() {
     input.endFrame();
   }
 
+  if (params.has('debug')) window.__debug = { get world() { return world; }, cam };
   document.addEventListener('visibilitychange', () => { if (document.hidden && screen === 'play') screen = 'pause'; });
   announce('Solmar Bay: Heatwave. Press Enter to start.');
   requestAnimationFrame(frame);

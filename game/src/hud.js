@@ -6,6 +6,7 @@ import { objectivePoint, objectiveText } from './missions.js';
 import { WEAPONS } from './combat.js';
 import { CAST } from './story.js';
 import { TOKEN_COUNT } from './services.js';
+import { toScreen } from './camera3d.js';
 
 export const FONT = '"Trebuchet MS", "Segoe UI", sans-serif';
 
@@ -81,10 +82,14 @@ function drawObjective(ctx, world) {
 function drawObjectiveArrow(ctx, world, cam, w, h) {
   const target = objectivePoint(world);
   if (!target) return;
-  const sx = (target.x - cam.x) * cam.zoom + w / 2;
-  const sy = (target.y - cam.y) * cam.zoom + h / 2;
-  if (sx > 40 && sx < w - 40 && sy > 40 && sy < h - 40) return;
-  const a = Math.atan2(sy - h / 2, sx - w / 2);
+  const pos = toScreen(cam, target.x, target.y, 60);
+  const meters = Math.round(Math.hypot(target.x - world.focus.x, target.y - world.focus.y) / 8);
+  if (pos && pos.x > 40 && pos.x < w - 40 && pos.y > 60 && pos.y < h - 60) {
+    outlined(ctx, `${meters} m`, pos.x, pos.y - 10, '#ffd23f', 15, 'center');
+    return;
+  }
+  const rel = Math.atan2(target.y - cam.y, target.x - cam.x) - cam.yaw;
+  const a = rel - Math.PI / 2;
   const ex = Math.min(w - 50, Math.max(50, w / 2 + Math.cos(a) * w));
   const ey = Math.min(h - 50, Math.max(50, h / 2 + Math.sin(a) * h));
   ctx.save();
@@ -95,8 +100,31 @@ function drawObjectiveArrow(ctx, world, cam, w, h) {
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-10, -15); ctx.lineTo(-4, 0); ctx.lineTo(-10, 15); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.restore();
-  const meters = Math.round(Math.hypot(target.x - world.focus.x, target.y - world.focus.y) / 8);
   outlined(ctx, `${meters} m`, ex, ey + 34, '#ffd23f', 14, 'center');
+}
+
+/** Labels that float over the 3D world: service icons, floating money, nearby place names. */
+function drawWorldLabels(ctx, world, cam) {
+  const places = world.city.places;
+  for (const key of ['safehouse', 'respray', 'arms', 'hospital', 'police']) {
+    const pl = places[key];
+    const d = Math.hypot(pl.x - cam.x, pl.y - cam.y);
+    if (d > 1400) continue;
+    const pos = toScreen(cam, pl.x, pl.y, 46);
+    if (!pos) continue;
+    ctx.fillStyle = 'rgba(10,14,22,0.75)';
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = pl.color; ctx.lineWidth = 2; ctx.stroke();
+    outlined(ctx, pl.icon, pos.x, pos.y + 6, pl.color, 17, 'center');
+    if (d < 500) outlined(ctx, pl.name, pos.x, pos.y - 22, '#ffffff', 13, 'center');
+  }
+  for (const f of world.floaters) {
+    const pos = toScreen(cam, f.x, f.y, 40);
+    if (!pos) continue;
+    ctx.globalAlpha = Math.min(1, f.life);
+    outlined(ctx, f.text, pos.x, pos.y - (1.6 - f.life) * 30, f.color, 18, 'center');
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawBottom(ctx, world, w, h) {
@@ -165,8 +193,9 @@ export function drawHud(ctx, world, cam, w, h) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
   }
+  drawWorldLabels(ctx, world, cam);
   drawObjectiveArrow(ctx, world, cam, w, h);
-  drawMinimap(ctx, world, 130, h - 130, 100);
+  drawMinimap(ctx, world, 130, h - 130, 100, cam.yaw);
   drawTopRight(ctx, world, w);
   drawObjective(ctx, world);
   drawBottom(ctx, world, w, h);

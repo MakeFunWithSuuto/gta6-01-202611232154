@@ -41,17 +41,28 @@ export function cityMapImage(city) {
 }
 
 /** Radar centred at (cx, cy) on screen with radius r (screen pixels). */
-export function drawMinimap(ctx, world, cx, cy, r) {
+export function drawMinimap(ctx, world, cx, cy, r, yaw = -Math.PI / 2) {
   if (!mapCanvas) mapCanvas = bakeMap(world.city);
   const f = world.focus;
   const zoom = world.player.car ? 1.15 : 1.6;
   const k = SCALE * zoom;
+  const turn = -Math.PI / 2 - yaw;
+  const cs = Math.cos(turn);
+  const sn = Math.sin(turn);
   ctx.save();
   ctx.fillStyle = 'rgba(10,14,22,0.75)';
   ctx.beginPath(); ctx.arc(cx, cy, r + 9, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
-  ctx.drawImage(mapCanvas, cx - f.x * k, cy - f.y * k, mapCanvas.width * zoom, mapCanvas.height * zoom);
-  const toMap = (x, y) => ({ x: cx + (x - f.x) * k, y: cy + (y - f.y) * k });
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(turn);
+  ctx.drawImage(mapCanvas, -f.x * k, -f.y * k, mapCanvas.width * zoom, mapCanvas.height * zoom);
+  ctx.restore();
+  const toMap = (x, y) => {
+    const dx = (x - f.x) * k;
+    const dy = (y - f.y) * k;
+    return { x: cx + dx * cs - dy * sn, y: cy + dx * sn + dy * cs };
+  };
 
   const places = world.city.places;
   ctx.font = 'bold 11px sans-serif';
@@ -99,7 +110,7 @@ export function drawMinimap(ctx, world, cx, cy, r) {
   const heading = world.player.car ? world.player.car.angle : world.player.angle;
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(heading);
+  ctx.rotate(heading + turn);
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#0b1220';
   ctx.lineWidth = 2;
@@ -119,5 +130,5 @@ export function drawMinimap(ctx, world, cx, cy, r) {
   ctx.lineCap = 'butt';
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 12px sans-serif';
-  ctx.fillText('N', cx, cy - r + 10);
+  ctx.fillText('N', cx + Math.cos(turn - Math.PI / 2) * (r - 10), cy + Math.sin(turn - Math.PI / 2) * (r - 10));
 }

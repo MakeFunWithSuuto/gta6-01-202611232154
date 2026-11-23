@@ -128,8 +128,11 @@ export function updatePlayer(world, input, aimAt, dt) {
   const my = input.axis(['KeyW', 'ArrowUp'], ['KeyS', 'ArrowDown']);
   const len = Math.hypot(mx, my) || 1;
   const speed = input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? PLAYER_SPRINT : PLAYER_WALK;
-  const tvx = (mx / len) * speed;
-  const tvy = (my / len) * speed;
+  const yaw = world.viewYaw ?? -Math.PI / 2;
+  const fwd = -my / len;
+  const side = mx / len;
+  const tvx = (Math.cos(yaw) * fwd - Math.sin(yaw) * side) * speed;
+  const tvy = (Math.sin(yaw) * fwd + Math.cos(yaw) * side) * speed;
   p.vx += (tvx - p.vx) * Math.min(1, dt * 12);
   p.vy += (tvy - p.vy) * Math.min(1, dt * 12);
   p.x += p.vx * dt;

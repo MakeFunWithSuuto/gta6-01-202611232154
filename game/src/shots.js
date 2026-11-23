@@ -4,7 +4,7 @@
 // hands back the world and camera to paint.
 import { STEP } from './config.js';
 import { createWorld, stepWorld } from './world.js';
-import { createCamera, snapCamera, updateCamera } from './camera.js';
+import { createCamera3d, placeCamera3d, snapCamera3d, updateCamera3d } from './camera3d.js';
 import { lanePoint, placeOnRoad } from './traffic.js';
 import { createCar, steerToward } from './vehicles.js';
 import { createPed, maintainPeds } from './peds.js';
@@ -44,11 +44,12 @@ function run(world, cam, seconds, each) {
   for (let t = 0; t < seconds; t += STEP) {
     each?.(t);
     stepWorld(world, null, { x: 0, y: 0 }, STEP);
-    updateCamera(cam, world, STEP, null);
+    world.viewYaw = cam.yaw;
+    updateCamera3d(cam, world, STEP);
     world.events = [];
   }
   world.shake = 0;
-  cam.shakeX = 0; cam.shakeY = 0;
+  cam.shake = 0;
 }
 
 function chase(seed) {
@@ -66,10 +67,10 @@ function chase(seed) {
   placeOnRoad(limo, 2, 3, 0, 380);
   limo.vx = 280;
   raiseWanted(world, 3);
-  cruiser(world, car.x - 170, car.y, 0);
-  cruiser(world, car.x - 300, car.y - 40, 0);
-  const cam = createCamera();
-  snapCamera(cam, world);
+  cruiser(world, car.x - 120, car.y + 6, 0);
+  cruiser(world, car.x - 210, car.y - 34, 0);
+  const cam = createCamera3d();
+  snapCamera3d(cam, world);
   world.heli = { x: car.x - 200, y: car.y - 160, angle: 0, rotor: 0, fireCd: 3, light: 0 };
   run(world, cam, 2.1, () => {
     const goal = lanePoint(car.x > lanePoint(3, 3, 0).x - 60 ? 4 : 3, 3, 0);
@@ -104,9 +105,8 @@ function shootout(seed) {
   const parked = createCar('ramble', pier.x + 120, pier.y - 60, 0.3, '#c46a3d');
   world.cars.push(parked);
   raiseWanted(world, 2);
-  const cam = createCamera();
-  snapCamera(cam, world);
-  cam.zoom = 1.1;
+  const cam = createCamera3d();
+  snapCamera3d(cam, world);
   run(world, cam, 1.4, (t) => {
     const target = world.peds.find((ped) => ped.tag === 'pike' && !ped.dead) ?? world.peds.find((ped) => ped.tag === 'crew' && !ped.dead);
     if (!target) return;
@@ -124,7 +124,7 @@ function shootout(seed) {
   const pike = world.peds.find((ped) => ped.tag === 'pike');
   for (const ped of world.peds) if (ped.kind === 'cop') ped.dead = true;
   pike.x = p.x - 60; pike.y = p.y + 170;
-  cam.x = p.x - 40; cam.y = p.y + 60;
+  placeCamera3d(cam, p.x - 20, p.y, Math.PI / 2 - 0.35, 230, 230, 100);
   return { world, cam, hud: true };
 }
 
@@ -141,16 +141,14 @@ function cruise(seed) {
     const ped = createPed(world, 'civ', car.x + 200 + k * 90, car.y + 150 + (k % 2) * 40);
     world.peds.push(ped);
   }
-  const cam = createCamera();
-  snapCamera(cam, world);
+  const cam = createCamera3d();
+  snapCamera3d(cam, world);
   run(world, cam, 2.2, (t) => {
     const goal = lanePoint(6, 7, 0);
     steerToward(car, goal.x, goal.y, 330);
-    car.handbrake = t > 1.5 && t < 1.9;
-    if (t > 1.5) car.steer = -1;
+    car.steer += Math.sin(t * 3) * 0.15;
   });
   world.banner = null;
-  cam.y += 170;
   world.subtitle('rae', 'Sun going down over the Strand. Forty seconds to Club Marea. Easy.');
   return { world, cam, hud: true };
 }
@@ -158,13 +156,13 @@ function cruise(seed) {
 function title(seed) {
   const world = createWorld(seed);
   world.clock = 18.2;
-  const cam = createCamera();
+  const cam = createCamera3d();
   const tower = world.city.places.tower;
   world.player.x = tower.x - 300; world.player.y = tower.y + 400;
   run(world, cam, 1.5, () => {
     world.player.x = tower.x - 300; world.player.y = tower.y + 400;
   });
-  cam.x = tower.x - 300; cam.y = tower.y + 400; cam.zoom = 0.72;
+  placeCamera3d(cam, tower.x - 300, tower.y + 400, -0.6, 700, 420, 200, 1.0);
   const overlay = (ctx, w, h) => drawTitle(ctx, w, h, ['Continue', 'New Game', 'Controls'], 0, 1.2, 'Saved: 3/6 missions · $6,120');
   return { world, cam, hud: false, overlay };
 }
